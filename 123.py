@@ -1,221 +1,170 @@
-from flask import Flask, render_template_string, request, jsonify
-import threading
-from datetime import datetime, timedelta
+from flask import Flask, request, jsonify, render_template_string
+from datetime import datetime
 
 app = Flask(__name__)
 
-# Данные для отслеживания состояния
-status_data = {
-    "pc1": {"status": "ожидание", "lobby_id": None, "last_update": None},
-    "pc2": {"status": "ожидание", "lobby_id": None, "last_update": None},
-    "last_lobby_id": None,
-    "game_history": []
+# Хранение данных о лобби ID и статусе
+lobby_data = {
+    "pc1": {"lobby_id": None, "timestamp": None},
+    "pc2": {"lobby_id": None, "timestamp": None}
 }
 
-# Блокировка для потокобезопасности
-data_lock = threading.Lock()
+# История игр
+game_history = []
 
-# HTML-шаблон
-html_template = """
+@app.route("/")
+def index():
+    return render_template_string('''
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Статус Лобби</title>
+    <title>Dota Lobby Status</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Arial', sans-serif;
-            background-color: #f0f2f5;
-            color: #333;
-            margin: 0;
-            padding: 0;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 40px auto;
+        .status-box {
             padding: 20px;
-        }
-        h1 {
+            border-radius: 10px;
             text-align: center;
-            font-size: 32px;
-            color: #444;
+            margin: 10px;
+            color: white;
         }
-        .status-card {
-            display: flex;
-            justify-content: space-around;
-            margin-bottom: 40px;
+        .status-box.green {
+            background-color: #28a745;
         }
-        .card {
-            background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            width: 220px;
-            padding: 20px;
-            text-align: center;
-            position: relative;
+        .status-box.orange {
+            background-color: #ffc107;
         }
-        .card h2 {
-            font-size: 20px;
-            color: #555;
-            margin-bottom: 10px;
+        .status-box.red {
+            background-color: #dc3545;
         }
-        .card p {
-            font-size: 16px;
-            margin-bottom: 20px;
+        .history-table {
+            margin-top: 20px;
         }
-        .card .status {
-            font-size: 18px;
-            font-weight: bold;
+        .history-table th {
+            background-color: #343a40;
+            color: white;
         }
-        .status-ожидание {
-            color: #999;
-        }
-        .status-совпало {
-            color: green;
-        }
-        .status-ждёт {
-            color: orange;
-        }
-        .status-ошибка {
-            color: red;
-        }
-        .history {
-            margin-top: 40px;
-            background: #ffffff;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-        .history h2 {
-            font-size: 24px;
-            margin-bottom: 20px;
-            color: #444;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            padding: 10px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }
-        th {
-            background-color: #f9f9f9;
-        }
-        tr:hover {
+        .history-table tr:hover {
             background-color: #f1f1f1;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Статус Лобби</h1>
-        <div class="status-card">
-            <div class="card">
-                <h2>ПК1</h2>
-                <p>ID Лобби: <br><strong>{{ data.pc1.lobby_id or '---' }}</strong></p>
-                <p class="status status-{{ data.pc1.status }}">{{ data.pc1.status }}</p>
+        <h1 class="text-center my-4">Dota Lobby Status</h1>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="status-box {% if lobby_data['pc1']['lobby_id'] and lobby_data['pc2']['lobby_id'] and lobby_data['pc1']['lobby_id'] == lobby_data['pc2']['lobby_id'] %}green{% elif lobby_data['pc1']['lobby_id'] or lobby_data['pc2']['lobby_id'] %}orange{% else %}red{% endif %}">
+                    <h2>PC1</h2>
+                    <p>Последний ID лобби: {{ lobby_data['pc1']['lobby_id'] or 'Нет данных' }}</p>
+                </div>
             </div>
-            <div class="card">
-                <h2>ПК2</h2>
-                <p>ID Лобби: <br><strong>{{ data.pc2.lobby_id or '---' }}</strong></p>
-                <p class="status status-{{ data.pc2.status }}">{{ data.pc2.status }}</p>
+            <div class="col-md-6">
+                <div class="status-box {% if lobby_data['pc1']['lobby_id'] and lobby_data['pc2']['lobby_id'] and lobby_data['pc1']['lobby_id'] == lobby_data['pc2']['lobby_id'] %}green{% elif lobby_data['pc1']['lobby_id'] or lobby_data['pc2']['lobby_id'] %}orange{% else %}red{% endif %}">
+                    <h2>PC2</h2>
+                    <p>Последний ID лобби: {{ lobby_data['pc2']['lobby_id'] or 'Нет данных' }}</p>
+                </div>
             </div>
         </div>
 
-        <div class="history">
-            <h2>История Игр</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Дата</th>
-                        <th>ID Лобби</th>
-                        <th>Статус</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for game in data.game_history %}
-                    <tr>
-                        <td>{{ game.time }}</td>
-                        <td>{{ game.lobby_id }}</td>
-                        <td>{{ game.status }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+        <h2 class="text-center my-4">История игр</h2>
+        <table class="table table-bordered history-table">
+            <thead>
+                <tr>
+                    <th>Время</th>
+                    <th>PC1 Lobby ID</th>
+                    <th>PC2 Lobby ID</th>
+                    <th>Статус</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for game in game_history %}
+                <tr>
+                    <td>{{ game['time'] }}</td>
+                    <td>{{ game['pc1_lobby_id'] }}</td>
+                    <td>{{ game['pc2_lobby_id'] }}</td>
+                    <td>
+                        {% if game['status'] == 'accept' %}
+                            <span class="badge badge-success">Совпадение</span>
+                        {% else %}
+                            <span class="badge badge-danger">Не совпадение</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </body>
 </html>
-"""
+    ''', lobby_data=lobby_data, game_history=game_history)
 
-@app.route("/")
-def index():
-    with data_lock:
-        data = {
-            "pc1": status_data["pc1"],
-            "pc2": status_data["pc2"],
-            "last_lobby_id": status_data["last_lobby_id"],
-            "game_history": status_data["game_history"]
-        }
-    return render_template_string(html_template, data=data)
+@app.route("/send_lobby_id", methods=["POST"])
+def send_lobby_id():
+    data = request.json
+    pc_name = data.get("pc")
+    lobby_id = data.get("lobby_id")
 
-@app.route("/check_lobby", methods=["POST"])
-def check_lobby():
-    request_data = request.json
-    pc_name = request_data.get("pc")
-    lobby_id = request_data.get("lobby_id")
+    if not pc_name or not lobby_id:
+        return jsonify({"status": "error", "message": "Invalid data"}), 400
 
-    with data_lock:
-        status_data[pc_name]["lobby_id"] = lobby_id
-        status_data[pc_name]["last_update"] = datetime.now()
-        status_data["last_lobby_id"] = lobby_id
+    # Сохраняем лобби ID и время получения
+    lobby_data[pc_name]["lobby_id"] = lobby_id
+    lobby_data[pc_name]["timestamp"] = datetime.now()
 
-        # Обновляем статус аккаунтов
-        pc1_lobby = status_data["pc1"].get("lobby_id")
-        pc2_lobby = status_data["pc2"].get("lobby_id")
+    # Проверяем статус игры
+    check_game_status()
 
-        if pc1_lobby and pc2_lobby:
-            if pc1_lobby == pc2_lobby:
-                status_data["pc1"]["status"] = "совпало"
-                status_data["pc2"]["status"] = "совпало"
-                # Добавляем в историю игр
-                status_data["game_history"].append({
-                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "lobby_id": pc1_lobby,
-                    "status": "успех"
-                })
-                return jsonify({"action": "accept"})
-            else:
-                status_data["pc1"]["status"] = "ошибка"
-                status_data["pc2"]["status"] = "ошибка"
-                return jsonify({"action": "reject"})
+    return jsonify({"status": "success"}), 200
+
+@app.route("/check_status", methods=["GET"])
+def check_status():
+    pc_name = request.args.get("pc")
+    if not pc_name:
+        return jsonify({"status": "error", "message": "Invalid data"}), 400
+
+    # Возвращаем текущий статус игры
+    status = get_game_status()
+    return jsonify({"status": status}), 200
+
+def check_game_status():
+    pc1_data = lobby_data["pc1"]
+    pc2_data = lobby_data["pc2"]
+
+    if pc1_data["lobby_id"] and pc2_data["lobby_id"]:
+        if pc1_data["lobby_id"] == pc2_data["lobby_id"]:
+            status = "accept"
         else:
-            now = datetime.now()
-            if pc1_lobby and status_data["pc2"].get("last_update"):
-                elapsed = now - status_data["pc2"].get("last_update")
-                if elapsed.total_seconds() > 6:
-                    status_data["pc1"]["status"] = "ошибка"
-                    status_data["pc2"]["status"] = "ошибка"
-                    return jsonify({"action": "reject"})
-            if pc2_lobby and status_data["pc1"].get("last_update"):
-                elapsed = now - status_data["pc1"].get("last_update")
-                if elapsed.total_seconds() > 6:
-                    status_data["pc1"]["status"] = "ошибка"
-                    status_data["pc2"]["status"] = "ошибка"
-                    return jsonify({"action": "reject"})
+            status = "reject"
+    else:
+        status = "wait"
 
-            if pc1_lobby or pc2_lobby:
-                if pc1_lobby:
-                    status_data["pc1"]["status"] = "ждёт"
-                if pc2_lobby:
-                    status_data["pc2"]["status"] = "ждёт"
-                return jsonify({"action": "wait"})
+    # Добавляем запись в историю игр
+    if status in ["accept", "reject"]:
+        game_history.append({
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "pc1_lobby_id": pc1_data["lobby_id"],
+            "pc2_lobby_id": pc2_data["lobby_id"],
+            "status": status
+        })
 
-    return jsonify({"action": "error"})
+    return status
+
+def get_game_status():
+    pc1_data = lobby_data["pc1"]
+    pc2_data = lobby_data["pc2"]
+
+    if pc1_data["lobby_id"] and pc2_data["lobby_id"]:
+        if pc1_data["lobby_id"] == pc2_data["lobby_id"]:
+            return "accept"
+        else:
+            return "reject"
+    elif pc1_data["lobby_id"] or pc2_data["lobby_id"]:
+        return "wait"
+    else:
+        return "idle"
 
 if __name__ == "__main__":
-    print("Запуск сервера...")
-    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=5000)
