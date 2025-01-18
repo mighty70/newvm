@@ -1,13 +1,13 @@
 from flask import Flask, render_template_string, request, jsonify
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
 # Данные для отслеживания состояния
 status_data = {
-    "pc1": {"status": "ожидание", "lobby_id": None},
-    "pc2": {"status": "ожидание", "lobby_id": None},
+    "pc1": {"status": "ожидание", "lobby_id": None, "last_update": None},
+    "pc2": {"status": "ожидание", "lobby_id": None, "last_update": None},
     "last_lobby_id": None,
     "game_history": []
 }
@@ -133,11 +133,12 @@ def check_lobby():
 
     with data_lock:
         status_data[pc_name]["lobby_id"] = lobby_id
+        status_data[pc_name]["last_update"] = datetime.now()
         status_data["last_lobby_id"] = lobby_id
 
         # Обновляем статус аккаунтов
-        pc1_lobby = status_data["pc1"]["lobby_id"]
-        pc2_lobby = status_data["pc2"]["lobby_id"]
+        pc1_lobby = status_data["pc1"].get("lobby_id")
+        pc2_lobby = status_data["pc2"].get("lobby_id")
 
         if pc1_lobby and pc2_lobby:
             if pc1_lobby == pc2_lobby:
@@ -155,6 +156,16 @@ def check_lobby():
                 status_data["pc2"]["status"] = "ошибка"
                 return jsonify({"action": "reject"})
         else:
+            now = datetime.now()
+            if pc1_lobby and status_data["pc2"].get("last_update"):
+                elapsed = now - status_data["pc2"].get("last_update")
+                if elapsed.total_seconds() > 6:
+                    return jsonify({"action": "search_again"})
+            if pc2_lobby and status_data["pc1"].get("last_update"):
+                elapsed = now - status_data["pc1"].get("last_update")
+                if elapsed.total_seconds() > 6:
+                    return jsonify({"action": "search_again"})
+
             if pc1_lobby or pc2_lobby:
                 if pc1_lobby:
                     status_data["pc1"]["status"] = "ждёт"
