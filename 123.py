@@ -25,90 +25,127 @@ html_template = """
     <title>Статус Лобби</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
+            font-family: 'Arial', sans-serif;
+            background-color: #f0f2f5;
             color: #333;
             margin: 0;
-            padding: 20px;
+            padding: 0;
         }
         .container {
-            max-width: 800px;
-            margin: auto;
-            background: #fff;
+            max-width: 1200px;
+            margin: 40px auto;
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
-        table {
-            width: 100%;
-            border-collapse: collapse;
+        h1 {
+            text-align: center;
+            font-size: 32px;
+            color: #444;
+        }
+        .status-card {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 40px;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            width: 220px;
+            padding: 20px;
+            text-align: center;
+            position: relative;
+        }
+        .card h2 {
+            font-size: 20px;
+            color: #555;
+            margin-bottom: 10px;
+        }
+        .card p {
+            font-size: 16px;
             margin-bottom: 20px;
         }
-        table, th, td {
-            border: 1px solid #ddd;
-        }
-        th, td {
-            padding: 10px;
-            text-align: left;
-        }
-        th {
-            background-color: #f4f4f4;
+        .card .status {
+            font-size: 18px;
+            font-weight: bold;
         }
         .status-ожидание {
             color: #999;
         }
         .status-совпало {
             color: green;
-            font-weight: bold;
         }
         .status-ждёт {
             color: orange;
-            font-weight: bold;
         }
         .status-ошибка {
             color: red;
-            font-weight: bold;
+        }
+        .history {
+            margin-top: 40px;
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .history h2 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #444;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Статус Лобби</h1>
-        <h2>Текущее Лобби</h2>
-        <p>Последний ID Лобби: <strong>{{ data.last_lobby_id }}</strong></p>
-        <h2>Статус ПК</h2>
-        <table>
-            <tr>
-                <th>ПК</th>
-                <th>Статус</th>
-                <th>ID Лобби</th>
-            </tr>
-            <tr>
-                <td>ПК1</td>
-                <td class="status-{{ data.pc1.status }}">{{ data.pc1.status }}</td>
-                <td>{{ data.pc1.lobby_id }}</td>
-            </tr>
-            <tr>
-                <td>ПК2</td>
-                <td class="status-{{ data.pc2.status }}">{{ data.pc2.status }}</td>
-                <td>{{ data.pc2.lobby_id }}</td>
-            </tr>
-        </table>
-        <h2>История Игр</h2>
-        <table>
-            <tr>
-                <th>Дата</th>
-                <th>ID Лобби</th>
-                <th>Статус</th>
-            </tr>
-            {% for game in data.game_history %}
-            <tr>
-                <td>{{ game.time }}</td>
-                <td>{{ game.lobby_id }}</td>
-                <td>{{ game.status }}</td>
-            </tr>
-            {% endfor %}
-        </table>
+        <div class="status-card">
+            <div class="card">
+                <h2>ПК1</h2>
+                <p>ID Лобби: <br><strong>{{ data.pc1.lobby_id or '---' }}</strong></p>
+                <p class="status status-{{ data.pc1.status }}">{{ data.pc1.status }}</p>
+            </div>
+            <div class="card">
+                <h2>ПК2</h2>
+                <p>ID Лобби: <br><strong>{{ data.pc2.lobby_id or '---' }}</strong></p>
+                <p class="status status-{{ data.pc2.status }}">{{ data.pc2.status }}</p>
+            </div>
+        </div>
+
+        <div class="history">
+            <h2>История Игр</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>ID Лобби</th>
+                        <th>Статус</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for game in data.game_history %}
+                    <tr>
+                        <td>{{ game.time }}</td>
+                        <td>{{ game.lobby_id }}</td>
+                        <td>{{ game.status }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </body>
 </html>
@@ -160,11 +197,15 @@ def check_lobby():
             if pc1_lobby and status_data["pc2"].get("last_update"):
                 elapsed = now - status_data["pc2"].get("last_update")
                 if elapsed.total_seconds() > 6:
-                    return jsonify({"action": "search_again"})
+                    status_data["pc1"]["status"] = "ошибка"
+                    status_data["pc2"]["status"] = "ошибка"
+                    return jsonify({"action": "reject"})
             if pc2_lobby and status_data["pc1"].get("last_update"):
                 elapsed = now - status_data["pc1"].get("last_update")
                 if elapsed.total_seconds() > 6:
-                    return jsonify({"action": "search_again"})
+                    status_data["pc1"]["status"] = "ошибка"
+                    status_data["pc2"]["status"] = "ошибка"
+                    return jsonify({"action": "reject"})
 
             if pc1_lobby or pc2_lobby:
                 if pc1_lobby:
