@@ -6,8 +6,8 @@ app = Flask(__name__)
 
 # Данные для отслеживания состояния
 status_data = {
-    "pc1": {"status": "idle", "lobby_id": None},
-    "pc2": {"status": "idle", "lobby_id": None},
+    "pc1": {"status": "ожидание", "lobby_id": None},
+    "pc2": {"status": "ожидание", "lobby_id": None},
     "last_lobby_id": None,
     "game_history": []
 }
@@ -18,11 +18,11 @@ data_lock = threading.Lock()
 # HTML-шаблон
 html_template = """
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lobby Status</title>
+    <title>Статус Лобби</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -54,18 +54,18 @@ html_template = """
         th {
             background-color: #f4f4f4;
         }
-        .status-idle {
+        .status-ожидание {
             color: #999;
         }
-        .status-matched {
+        .status-совпало {
             color: green;
             font-weight: bold;
         }
-        .status-waiting {
+        .status-ждёт {
             color: orange;
             font-weight: bold;
         }
-        .status-error {
+        .status-ошибка {
             color: red;
             font-weight: bold;
         }
@@ -73,33 +73,33 @@ html_template = """
 </head>
 <body>
     <div class="container">
-        <h1>Lobby Status</h1>
-        <h2>Current Lobby</h2>
-        <p>Last Lobby ID: <strong>{{ data.last_lobby_id }}</strong></p>
-        <h2>Status</h2>
+        <h1>Статус Лобби</h1>
+        <h2>Текущее Лобби</h2>
+        <p>Последний ID Лобби: <strong>{{ data.last_lobby_id }}</strong></p>
+        <h2>Статус ПК</h2>
         <table>
             <tr>
-                <th>PC</th>
-                <th>Status</th>
-                <th>Lobby ID</th>
+                <th>ПК</th>
+                <th>Статус</th>
+                <th>ID Лобби</th>
             </tr>
             <tr>
-                <td>PC1</td>
+                <td>ПК1</td>
                 <td class="status-{{ data.pc1.status }}">{{ data.pc1.status }}</td>
                 <td>{{ data.pc1.lobby_id }}</td>
             </tr>
             <tr>
-                <td>PC2</td>
+                <td>ПК2</td>
                 <td class="status-{{ data.pc2.status }}">{{ data.pc2.status }}</td>
                 <td>{{ data.pc2.lobby_id }}</td>
             </tr>
         </table>
-        <h2>Game History</h2>
+        <h2>История Игр</h2>
         <table>
             <tr>
-                <th>Date</th>
-                <th>Lobby ID</th>
-                <th>Status</th>
+                <th>Дата</th>
+                <th>ID Лобби</th>
+                <th>Статус</th>
             </tr>
             {% for game in data.game_history %}
             <tr>
@@ -125,8 +125,8 @@ def index():
         }
     return render_template_string(html_template, data=data)
 
-@app.route("/update", methods=["POST"])
-def update_status():
+@app.route("/check_lobby", methods=["POST"])
+def check_lobby():
     request_data = request.json
     pc_name = request_data.get("pc")
     lobby_id = request_data.get("lobby_id")
@@ -141,24 +141,28 @@ def update_status():
 
         if pc1_lobby and pc2_lobby:
             if pc1_lobby == pc2_lobby:
-                status_data["pc1"]["status"] = "matched"
-                status_data["pc2"]["status"] = "matched"
+                status_data["pc1"]["status"] = "совпало"
+                status_data["pc2"]["status"] = "совпало"
                 # Добавляем в историю игр
                 status_data["game_history"].append({
                     "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "lobby_id": pc1_lobby,
-                    "status": "success"
+                    "status": "успех"
                 })
+                return jsonify({"action": "accept"})
             else:
-                status_data["pc1"]["status"] = "error"
-                status_data["pc2"]["status"] = "error"
+                status_data["pc1"]["status"] = "ошибка"
+                status_data["pc2"]["status"] = "ошибка"
+                return jsonify({"action": "reject"})
         else:
-            if pc1_lobby:
-                status_data["pc1"]["status"] = "waiting"
-            if pc2_lobby:
-                status_data["pc2"]["status"] = "waiting"
+            if pc1_lobby or pc2_lobby:
+                if pc1_lobby:
+                    status_data["pc1"]["status"] = "ждёт"
+                if pc2_lobby:
+                    status_data["pc2"]["status"] = "ждёт"
+                return jsonify({"action": "wait"})
 
-    return jsonify({"message": "Status updated"})
+    return jsonify({"action": "error"})
 
 if __name__ == "__main__":
     print("Запуск сервера...")
